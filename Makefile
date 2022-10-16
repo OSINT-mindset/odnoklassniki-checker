@@ -1,8 +1,8 @@
-PROJECT_NAME=osint_cli_tool_skeleton
-LINT_FILES=osint_cli_tool_skeleton
+PROJECT_NAME=odnoklassniki_checker
+LINT_FILES=odnoklassniki_checker
 
 test:
-	coverage run --source=./osint_cli_tool_skeleton -m pytest tests
+	coverage run --source=./odnoklassniki_checker -m pytest tests
 	coverage report -m
 	coverage html
 

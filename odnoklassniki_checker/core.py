@@ -1,11 +1,18 @@
 import asyncio
 import logging
+import requests
 from json import JSONEncoder
 from typing import List, Any
 
 from aiohttp import TCPConnector, ClientSession
 
 from .executor import AsyncioProgressbarQueueExecutor, AsyncioSimpleExecutor
+
+
+OK_LOGIN_URL = \
+    'https://www.ok.ru/dk?st.cmd=anonymMain&st.accRecovery=on&st.error=errors.password.wrong'
+OK_RECOVER_URL = \
+    'https://www.ok.ru/dk?st.cmd=anonymRecoveryAfterFailedLogin&st._aid=LeftColumn_Login_ForgotPassword'
 
 
 class InputData:
@@ -20,10 +27,15 @@ class InputData:
 
 
 class OutputData:
-    def __init__(self, value, code, error):
-        self.value = value
+    def __init__(self, code, error, masked_name, masked_email,
+                masked_phone, profile_info, profile_registred):
         self.code = code
         self.error = error
+        self.masked_name = masked_name
+        self.masked_email = masked_email
+        self.masked_phone = masked_phone
+        self.profile_info = profile_info
+        self.profile_registred = profile_registred
 
     @property
     def fields(self):
@@ -97,30 +109,58 @@ class Processor:
     async def request(self, input_data: InputData) -> OutputDataList:
         from bs4 import BeautifulSoup as bs
         status = 0
-        result = None
         error = None
 
+        # odnoklassniki data
+        masked_name = None
+        masked_email = None
+        masked_phone = None
+        profile_info = None
+        profile_registred = None
+
         try:
-            url = input_data.value
-            if not url.startswith('http'):
-                url = 'https://' + url
+            login_data = input_data.value
+            session = requests.Session()
+            session.get(f'{OK_LOGIN_URL}&st.email={login_data}')
+            request = session.get(OK_RECOVER_URL)
+            status = request.status_code
+            root_soup = bs(request.content, 'html.parser')
+            soup = root_soup.find('div', {'data-l': 'registrationContainer,offer_contact_rest'})
+            if soup:
+                account_info = soup.find('div', {'class': 'ext-registration_tx taCenter'})
+                masked_email = soup.find('button', {'data-l': 't,email'})
+                masked_phone = soup.find('button', {'data-l': 't,phone'})
+                if masked_phone:
+                    masked_phone = masked_phone.find('div', {'class': 'ext-registration_stub_small_header'}).get_text()
+                if masked_email:
+                    masked_email = masked_email.find('div', {'class': 'ext-registration_stub_small_header'}).get_text()
+                if account_info:
+                    masked_name = account_info.find('div', {'class': 'ext-registration_username_header'})
+                    if masked_name:
+                        masked_name = masked_name.get_text()
+                    account_info = account_info.findAll('div', {'class': 'lstp-t'})
+                    if account_info:
+                        profile_info = account_info[0].get_text()
+                        profile_registred = account_info[1].get_text()
 
-            response = await self.session.get(url)
-
-            status = response.status
-            response_content = await response.content.read()
-            charset = response.charset or "utf-8"
-            html = response_content.decode(charset, "ignore")
-
-            soup = bs(html, 'html.parser')
-            title = soup.find('title').string
-            result = title
+            if root_soup.find('div', {'data-l': 'registrationContainer,home_rest'}):
+                output_data = None
+            else:        
+                output_data = OutputData(
+                    status,
+                    error,
+                    masked_name=masked_name,
+                    masked_email=masked_email,
+                    masked_phone=masked_phone,
+                    profile_info=profile_info,
+                    profile_registred=profile_registred,
+                )
 
         except Exception as e:
             error = e
             self.logger.error(e, exc_info=False)
 
-        results = OutputDataList(input_data, [OutputData(result, status, error)])
+        results = OutputDataList(input_data, [output_data] if output_data else [])
 
         return results
 
