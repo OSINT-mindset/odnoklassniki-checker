@@ -210,3 +210,8 @@ Also you can install it from the PyPI registry:
 $ pip3 install https://github.com/soxoj/osint-cli-tool-skeleton
 ```
 </details>
+
+### SOWEL classification
+
+This tool uses the following OSINT techniques:
+- [SOTL-4.1. Try To Recover Access](https://sowel.soxoj.com/recover-access)
